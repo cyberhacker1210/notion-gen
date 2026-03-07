@@ -18,12 +18,12 @@ export default function Hero() {
             <p className="mt-8 text-xl text-gray-600 max-w-2xl leading-relaxed">
                 Ne perds plus des heures à configurer. Décris simplement ton besoin à l'IA, et obtiens un template complet avec bases de données, pages et liens. Prêt à l'emploi instantanément.
             </p>
-            <button className="mt-12 bg-blue-600 text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-blue-700 hover:scale-105 transition-all duration-300 shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)] hover:shadow-[0_0_60px_-15px_rgba(37,99,235,0.7)] flex items-center gap-2">
+            <a href="#waitlist" className="mt-12 bg-blue-600 text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-blue-700 hover:scale-105 transition-all duration-300 shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)] hover:shadow-[0_0_60px_-15px_rgba(37,99,235,0.7)] flex items-center gap-2">
                 Je veux générer mon premier template
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
-            </button>
+            </a>
             <p className="mt-6 text-sm text-gray-500 font-medium">
                 ⚡ Déjà +100 templates générés cette semaine
             </p>
