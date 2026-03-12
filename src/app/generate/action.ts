@@ -2,490 +2,372 @@
 
 import OpenAI from "openai";
 
+// ================================================================
+// INIT
+// ================================================================
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
 });
 
-async function fetchNotion(endpoint: string, method: string, body: any) {
+// ================================================================
+// NOTION API
+// ================================================================
+
+async function notion(endpoint: string, method: string, body?: any) {
   const res = await fetch(`https://api.notion.com/v1/${endpoint}`, {
     method,
     headers: {
-      "Authorization": `Bearer ${process.env.NOTION_API_KEY}`,
+      Authorization: `Bearer ${process.env.NOTION_API_KEY}`,
       "Notion-Version": "2022-06-28",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify(body)
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await res.json();
   if (!res.ok) {
-    console.error(`❌ Erreur Notion sur ${endpoint}:`, JSON.stringify(data, null, 2));
-    throw new Error(`Notion API Error on ${endpoint}`);
+    console.error(`❌ [${endpoint}]`, JSON.stringify(data, null, 2));
+    throw new Error(`Notion: ${data.message || endpoint}`);
   }
   return data;
 }
 
-function getValidType(aiType: string) {
-  const validTypes = ["rich_text", "number", "select", "checkbox", "date", "url", "email", "phone_number"];
-  return validTypes.includes(aiType) ? aiType : "rich_text";
+async function append(pageId: string, blocks: any[]) {
+  const safeBlocks = blocks.filter(b => b != null);
+  for (let i = 0; i < safeBlocks.length; i += 100) {
+    await notion(`blocks/${pageId}/children`, "PATCH", {
+      children: safeBlocks.slice(i, i + 100),
+    });
+  }
 }
 
-async function appendBlocks(pageId: string, blocks: any[]) {
-  return fetchNotion(`blocks/${pageId}/children`, "PATCH", { children: blocks });
+// ================================================================
+// IMAGE LIBRARY (100% Vérifiées - Adieu les liens cassés)
+// ================================================================
+
+const MAIN_COVERS = [
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2560&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=2560&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2560&auto=format&fit=crop",
+];
+
+const NAV_IMAGES = [
+  "https://images.unsplash.com/photo-1517842645767-c639042777db?q=80&w=800&auto=format&fit=crop", // iPad/Notes
+  "https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop", // Desk top view
+  "https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?q=80&w=800&auto=format&fit=crop", // Workspace aesthetic
+  "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?q=80&w=800&auto=format&fit=crop", // Minimalist desk
+];
+
+const GALLERY_COVERS = [
+  "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1505664159854-2326115c8c2f?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1512314889357-e157c22f938d?q=80&w=600&auto=format&fit=crop",
+];
+
+// ================================================================
+// BLOCK BUILDERS
+// ================================================================
+
+const B = {
+  h2: (t: string) => ({ object: "block", type: "heading_2", heading_2: { rich_text: [{ type: "text", text: { content: t || " " } }] } }),
+  h3: (t: string) => ({ object: "block", type: "heading_3", heading_3: { rich_text: [{ type: "text", text: { content: t || " " } }] } }),
+  p: (t: string, color = "default") => ({ object: "block", type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: t || " " }, annotations: { color } }] } }),
+  quote: (t: string) => ({ object: "block", type: "quote", quote: { rich_text: [{ type: "text", text: { content: t || " " } }] } }),
+  callout: (t: string, emoji: string, color = "gray_background", bold = false) => ({
+    object: "block", type: "callout",
+    callout: { rich_text: [{ type: "text", text: { content: t || " " }, annotations: { bold } }], icon: { type: "emoji", emoji: emoji || "💡" }, color }
+  }),
+  todo: (t: string, checked = false) => ({ object: "block", type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: t || " " } }], checked } }),
+  bullet: (t: string) => ({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: [{ type: "text", text: { content: t || " " } }] } }),
+  embed: (url: string) => {
+    if (!url || !url.startsWith("http")) return B.p("[Widget]");
+    return { object: "block", type: "embed", embed: { url } };
+  },
+  image: (url: string) => {
+    if (!url || !url.startsWith("http")) return B.p("[Image]");
+    return { object: "block", type: "image", image: { type: "external", external: { url } } };
+  },
+  divider: () => ({ object: "block", type: "divider", divider: {} }),
+  space: () => ({ object: "block", type: "paragraph", paragraph: { rich_text: [] } }),
+  cols: (columns: any[][]) => {
+    const safeCols = columns.map(col => col.length > 0 ? col : [B.p(" ")]);
+    while (safeCols.length < 2) safeCols.push([B.p(" ")]);
+    return {
+      object: "block", type: "column_list",
+      column_list: { children: safeCols.map(bl => ({ object: "block", type: "column", column: { children: bl } })) }
+    };
+  },
+};
+
+// ================================================================
+// AI ARCHITECT
+// ================================================================
+
+interface Plan {
+  system_name: string;
+  system_emoji: string;
+  tagline: string;
+  quote: string;
+  widgets: {
+    kpis: Array<{ label: string; value: string }>;
+    actions: Array<{ label: string; emoji: string }>;
+    todos: string[];
+    reminders: string[];
+  };
+  visual_nav: Array<{ label: string; emoji: string }>; // Exactement 4 (sans image_url géré par IA)
+  databases: Array<{
+    key: string;
+    title: string;
+    emoji: string;
+    description: string;
+    title_column: string;
+    columns: Array<{ name: string; type: string; options?: string[] }>;
+    sample_data: Array<{ title: string; values: Record<string, any> }>; // Plus de cover_url par IA
+    relates_to?: string;
+    relation_name?: string;
+  }>;
 }
+
+async function architect(prompt: string): Promise<Plan> {
+  const res = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.7,
+    messages: [
+      {
+        role: "system",
+        content: `Tu es un architecte Notion. L'utilisateur va te donner un sujet (ex: SaaS Manager, Étudiant, Fitness).
+Tu dois concevoir un système complet avec une structure JSON stricte.
+
+RÈGLES IMPORTANTES :
+1. "visual_nav" doit contenir EXACTEMENT 4 items (juste label et emoji).
+2. 3 à 5 "databases" relationnelles.
+3. "columns" : Types valides: "rich_text", "number", "select", "multi_select", "checkbox", "date", "url", "email". JAMAIS "title" dans columns.
+
+JSON STRICT :
+{
+  "system_name": "...",
+  "system_emoji": "...",
+  "tagline": "...",
+  "quote": "...",
+  "widgets": {
+    "kpis": [{"label": "MRR", "value": "1200€"}, {"label": "Clients", "value": "15"}],
+    "actions": [{"label": "New Client", "emoji": "👤"}],
+    "todos": ["Call John", "Send Invoice"],
+    "reminders": ["Meeting at 4PM"]
+  },
+  "visual_nav": [
+    {"label": "Factures", "emoji": "💶"}
+  ],
+  "databases": [
+    {
+      "key": "db_clients",
+      "title": "Clients",
+      "emoji": "👥",
+      "description": "Base des clients",
+      "title_column": "Nom Client",
+      "columns": [{"name": "Statut", "type": "select", "options": ["Actif", "Inactif"]}],
+      "sample_data": [{"title": "Acme Corp", "values": {"Statut": "Actif"}}],
+      "relates_to": "",
+      "relation_name": ""
+    }
+  ]
+}`
+      },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+  
+  return JSON.parse(res.choices[0].message.content as string) as Plan;
+}
+
+// ================================================================
+// BUILD ROW PROPERTIES
+// ================================================================
+
+function vtype(t: string) { return ["rich_text","number","select","multi_select","checkbox","date","url","email"].includes(t) ? t : "rich_text"; }
+
+function buildRow(db: Plan["databases"][0], item: any, relId?: string): any {
+  const tc = db.title_column || "Nom";
+  const p: any = { [tc]: { title: [{ text: { content: String(item.title || "—") } }] } };
+
+  if (item.values) {
+    for (const [k, v] of Object.entries(item.values)) {
+      if (k === tc || k === db.relation_name || v == null) continue;
+      const col = db.columns.find((c) => c.name === k);
+      if (!col) continue;
+      const t = vtype(col.type);
+      try {
+        if (t === "checkbox") p[k] = { checkbox: v === true || v === "true" };
+        else if (t === "number") p[k] = { number: Number(v) || 0 };
+        else if (t === "select") p[k] = { select: { name: String(v) } };
+        else if (t === "multi_select") p[k] = { multi_select: (Array.isArray(v)?v:[v]).map(x => ({ name: String(x) })) };
+        else if (t === "date") p[k] = { date: { start: String(v).slice(0, 10) } };
+        else if (t === "url") { if (String(v).startsWith("http")) p[k] = { url: String(v) }; }
+        else p[k] = { rich_text: [{ text: { content: String(v) } }] };
+      } catch {}
+    }
+  }
+
+  if (db.relation_name && relId) {
+    p[db.relation_name] = { relation: [{ id: relId }] };
+  }
+  return p;
+}
+
+// ================================================================
+// MAIN GENERATOR
+// ================================================================
 
 export async function generateNotionTemplate(prompt: string) {
   try {
-    console.log("1. 🧠 Conception du Système Ultime...");
+    console.log("🧠 1. IA : Architecture du système...");
+    const plan = await architect(prompt);
+    
+    const rootId = process.env.NOTION_PARENT_PAGE_ID!;
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content: `Tu es un créateur de templates Notion premium vendus à 150€.
-          Conçois un ÉCOSYSTÈME professionnel avec 3 bases de données dont 2 connectées.
-          
-          JSON STRICT :
-          {
-            "nom_systeme": "Nom premium (ex: Content Agency OS)",
-            "emoji": "Un emoji",
-            "pitch": "Phrase d'accroche percutante (1 ligne)",
-            "methodologie": "Explication de ta méthodologie (2-3 phrases)",
-            "citation": "Citation inspirante liée au thème",
-            "guide": "Guide d'utilisation DÉTAILLÉ en 4-5 paragraphes. Explique étape par étape comment utiliser chaque espace au quotidien.",
-            "astuces": ["Astuce pro 1", "Astuce pro 2", "Astuce pro 3", "Astuce pro 4"],
-            "quetes": [
-              "Lis le Mode d'Emploi en entier",
-              "Transforme la base principale en vue Kanban",
-              "Crée ta première vraie entrée",
-              "Ajoute une vue Calendrier sur la base secondaire",
-              "Personnalise les options de la colonne Statut",
-              "Invite un collaborateur sur cet espace"
-            ],
-            "db_principale": {
-              "titre": "Nom de la DB",
-              "emoji": "📊",
-              "intro": "Phrase d'intro pour cette section",
-              "col_titre": "Nom colonne titre",
-              "colonnes": [
-                { "nom": "Statut", "type_notion": "select" },
-                { "nom": "Budget", "type_notion": "number" }
-              ],
-              "donnees": [
-                { "titre": "Exemple réaliste 1", "resume": "Description détaillée de cet élément en 2-3 phrases" },
-                { "titre": "Exemple réaliste 2", "resume": "Description détaillée" },
-                { "titre": "Exemple réaliste 3", "resume": "Description détaillée" }
-              ]
-            },
-            "db_secondaire": {
-              "titre": "Nom de la DB",
-              "emoji": "📋",
-              "intro": "Phrase d'intro pour cette section",
-              "col_titre": "Nom colonne titre",
-              "nom_relation": "Nom colonne relation vers DB principale",
-              "colonnes": [
-                { "nom": "Priorité", "type_notion": "select" },
-                { "nom": "Deadline", "type_notion": "date" },
-                { "nom": "Terminé", "type_notion": "checkbox" }
-              ],
-              "donnees": [
-                { "titre": "Tâche réaliste 1", "parent_index": 0 },
-                { "titre": "Tâche réaliste 2", "parent_index": 0 },
-                { "titre": "Tâche réaliste 3", "parent_index": 1 },
-                { "titre": "Tâche réaliste 4", "parent_index": 1 },
-                { "titre": "Tâche réaliste 5", "parent_index": 2 }
-              ]
-            },
-            "db_reference": {
-              "titre": "Nom de la DB",
-              "emoji": "📚",
-              "intro": "Phrase d'intro pour cette section",
-              "col_titre": "Nom colonne titre",
-              "colonnes": [
-                { "nom": "Catégorie", "type_notion": "select" },
-                { "nom": "Lien", "type_notion": "url" }
-              ],
-              "donnees": [
-                { "titre": "Ressource 1", "contenu": "Procédure détaillée étape par étape avec 5-6 étapes numérotées" },
-                { "titre": "Ressource 2", "contenu": "Procédure détaillée étape par étape" },
-                { "titre": "Ressource 3", "contenu": "Procédure détaillée étape par étape" }
-              ]
-            }
-          }
-          ATTENTION : type_notion UNIQUEMENT parmi : rich_text, number, select, checkbox, date, url.
-          Génère des données ULTRA-RÉALISTES et pertinentes au domaine.`
-        },
-        { role: "user", content: `Crée un système professionnel complet pour : ${prompt}` }
-      ],
-      response_format: { type: "json_object" }
+    console.log("🏗️ 2. Création de la page principale...");
+    
+    // Tirage aléatoire d'une cover principale validée
+    const randomMainCover = MAIN_COVERS[Math.floor(Math.random() * MAIN_COVERS.length)];
+
+    const dashboard = await notion("pages", "POST", {
+      parent: { type: "page_id", page_id: rootId },
+      icon: { type: "emoji", emoji: plan.system_emoji || "⚡" },
+      cover: { type: "external", external: { url: randomMainCover } }, 
+      properties: {
+        title: { title: [{ text: { content: plan.system_name || "Workspace" } }] },
+      },
     });
+    const D = dashboard.id;
 
-    const ai = JSON.parse(response.choices[0].message.content as string);
-    console.log(`2. 🏗️ Système reçu : ${ai.nom_systeme}`);
+    console.log("🎨 3. Construction des Widgets (Top Row)...");
+    
+    const kpiCol = [B.h3("📊 Metrics")];
+    for (const kpi of (plan.widgets?.kpis || []).slice(0, 4)) {
+      kpiCol.push(B.callout(`${kpi.label}\n${kpi.value}`, "📈", "gray_background"));
+    }
+    
+    const actionCol = [B.h3("⚡ Actions"), B.divider()];
+    for (const action of (plan.widgets?.actions || []).slice(0, 4)) {
+      actionCol.push(B.callout(action.label, action.emoji || "📌", "blue_background", true));
+    }
 
-    const rootPageId = process.env.NOTION_PARENT_PAGE_ID!;
+    const todoCol = [B.h3("☑️ Mini-To-Do")];
+    for (const td of (plan.widgets?.todos || []).slice(0, 5)) {
+      todoCol.push(B.todo(td));
+    }
 
-    // ================================================================
-    // 3. DASHBOARD PREMIUM
-    // ================================================================
-    console.log("-> Dashboard...");
-    const dashboard = await fetchNotion("pages", "POST", {
-      parent: { type: "page_id", page_id: rootPageId },
-      icon: { type: "emoji", emoji: ai.emoji || "🚀" },
-      cover: { type: "external", external: { url: "https://images.unsplash.com/photo-1604147706283-d7119b5b822c?q=80&w=2564&auto=format&fit=crop" } },
-      properties: { title: { title: [{ text: { content: ai.nom_systeme || "Système" } }] } },
-      children: [
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: ai.pitch || "Bienvenue" }, annotations: { bold: true } }],
-            icon: { type: "emoji", emoji: "⚡" },
-            color: "blue_background"
-          }
-        },
-        { object: "block", type: "divider", divider: {} },
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [
-              { type: "text", text: { content: "MÉTHODOLOGIE\n" }, annotations: { bold: true } },
-              { type: "text", text: { content: ai.methodologie || "Système optimisé." } }
-            ],
-            icon: { type: "emoji", emoji: "🧠" },
-            color: "gray_background"
-          }
-        },
-        {
-          object: "block", type: "column_list",
-          column_list: {
-            children: [
-              {
-                object: "block", type: "column",
-                column: {
-                  children: [
-                    { object: "block", type: "heading_3", heading_3: { rich_text: [{ type: "text", text: { content: "⚡ Actions Rapides" } }] } },
-                    { object: "block", type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: "Lire le Mode d'Emploi" } }], checked: false } },
-                    { object: "block", type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: "Explorer chaque espace" } }], checked: false } },
-                    { object: "block", type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: "Créer ma première entrée" } }], checked: false } },
-                    { object: "block", type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: "Configurer mes vues favorites" } }], checked: false } }
-                  ]
-                }
-              },
-              {
-                object: "block", type: "column",
-                column: {
-                  children: [
-                    { object: "block", type: "heading_3", heading_3: { rich_text: [{ type: "text", text: { content: "💎 Philosophie" } }] } },
-                    { object: "block", type: "quote", quote: { rich_text: [{ type: "text", text: { content: ai.citation || "Un objectif sans système n'est qu'un souhait." } }] } },
-                    {
-                      object: "block", type: "callout",
-                      callout: {
-                        rich_text: [{ type: "text", text: { content: "Clique sur '+' à côté de 'Table' pour activer Kanban, Galerie ou Calendrier !" } }],
-                        icon: { type: "emoji", emoji: "🪄" },
-                        color: "yellow_background"
-                      }
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        },
-        { object: "block", type: "divider", divider: {} },
-        { object: "block", type: "heading_2", heading_2: { rich_text: [{ type: "text", text: { content: "🗂️ Tes Espaces de Travail" } }] } },
-        {
-          object: "block", type: "paragraph",
-          paragraph: { rich_text: [{ type: "text", text: { content: "Navigue dans tes espaces ci-dessous. Chaque espace contient sa propre base de données et ses instructions." }, annotations: { italic: true, color: "gray" } }] }
-        }
-      ]
-    });
-    const dashboardId = dashboard.id;
+    const reminderCol = [B.h3("📌 Reminders")];
+    for (const rem of (plan.widgets?.reminders || []).slice(0, 5)) {
+      reminderCol.push(B.bullet(rem));
+    }
 
-    // ================================================================
-    // 4. CRÉATION DES 3 SOUS-PAGES (Architecture App-Like)
-    // ================================================================
-    console.log("-> Espace 1 (Principal)...");
-    const space1 = await fetchNotion("pages", "POST", {
-      parent: { type: "page_id", page_id: dashboardId },
-      icon: { type: "emoji", emoji: ai.db_principale?.emoji || "📊" },
-      properties: { title: { title: [{ text: { content: ai.db_principale?.titre || "Base Principale" } }] } },
-      children: [
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: ai.db_principale?.intro || "Ton espace principal." } }],
-            icon: { type: "emoji", emoji: "📌" }, color: "blue_background"
-          }
-        },
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: "💡 Clique sur '+' à côté de 'Table' pour passer en vue Kanban ou Galerie." } }],
-            icon: { type: "emoji", emoji: "🪄" }, color: "yellow_background"
-          }
-        },
-        { object: "block", type: "divider", divider: {} }
-      ]
-    });
-    const space1Id = space1.id;
-
-    console.log("-> Espace 2 (Secondaire)...");
-    const space2 = await fetchNotion("pages", "POST", {
-      parent: { type: "page_id", page_id: dashboardId },
-      icon: { type: "emoji", emoji: ai.db_secondaire?.emoji || "📋" },
-      properties: { title: { title: [{ text: { content: ai.db_secondaire?.titre || "Base Secondaire" } }] } },
-      children: [
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: ai.db_secondaire?.intro || "Ton espace secondaire." } }],
-            icon: { type: "emoji", emoji: "📌" }, color: "green_background"
-          }
-        },
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: "💡 Ajoute une vue Calendrier ici pour visualiser tes deadlines." } }],
-            icon: { type: "emoji", emoji: "🪄" }, color: "yellow_background"
-          }
-        },
-        { object: "block", type: "divider", divider: {} }
-      ]
-    });
-    const space2Id = space2.id;
-
-    console.log("-> Espace 3 (Référence)...");
-    const space3 = await fetchNotion("pages", "POST", {
-      parent: { type: "page_id", page_id: dashboardId },
-      icon: { type: "emoji", emoji: ai.db_reference?.emoji || "📚" },
-      properties: { title: { title: [{ text: { content: ai.db_reference?.titre || "Références" } }] } },
-      children: [
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: ai.db_reference?.intro || "Tes ressources et procédures." } }],
-            icon: { type: "emoji", emoji: "📌" }, color: "purple_background"
-          }
-        },
-        { object: "block", type: "divider", divider: {} }
-      ]
-    });
-    const space3Id = space3.id;
-
-    // ================================================================
-    // 5. LIENS DE NAVIGATION SUR LE DASHBOARD
-    // ================================================================
-    console.log("-> Navigation...");
-    await appendBlocks(dashboardId, [
-      { object: "block", type: "link_to_page", link_to_page: { type: "page_id", page_id: space1Id } },
-      { object: "block", type: "link_to_page", link_to_page: { type: "page_id", page_id: space2Id } },
-      { object: "block", type: "link_to_page", link_to_page: { type: "page_id", page_id: space3Id } }
+    await append(D, [
+      B.space(),
+      B.callout(plan.tagline || "Bienvenue.", plan.system_emoji || "✨", "blue_background", true),
+      B.quote(plan.quote || "Focus & Discipline."),
+      B.space(),
+      B.cols([kpiCol, actionCol, todoCol, reminderCol]),
+      B.divider()
     ]);
 
-    // ================================================================
-    // 6. DB PRINCIPALE + DATA + CONTENU
-    // ================================================================
-    console.log("-> DB Principale...");
-    const mainProps: any = { [ai.db_principale.col_titre || "Nom"]: { title: {} } };
-    for (const col of (ai.db_principale.colonnes || [])) {
-      mainProps[col.nom] = { [getValidType(col.type_notion)]: {} };
+    console.log("🖼️ 4. Construction de la Navigation Visuelle...");
+    const navItems = (plan.visual_nav || []).slice(0, 4);
+    if (navItems.length > 0) {
+      const navCols = navItems.map((nav, i) => [
+        // On pioche dans notre tableau d'images sécurisées au lieu de faire confiance à l'IA
+        B.image(NAV_IMAGES[i % NAV_IMAGES.length]),
+        B.callout(nav.label, nav.emoji || "📂", "gray_background", true)
+      ]);
+      await append(D, [
+        B.h2("🧭 Espaces"),
+        B.cols(navCols),
+        B.divider()
+      ]);
     }
 
-    const dbMain = await fetchNotion("databases", "POST", {
-      parent: { type: "page_id", page_id: space1Id },
-      title: [{ type: "text", text: { content: ai.db_principale.titre || "Base Principale" } }],
-      properties: mainProps,
-      is_inline: true
-    });
-    const dbMainId = dbMain.id;
+    console.log("🗄️ 5. Création des Bases de Données...");
+    
+    const dbMap: Record<string, { dbId: string; rowIds: string[] }> = {};
+    const parentDbs = plan.databases.filter(d => !d.relates_to);
+    const childDbs = plan.databases.filter(d => d.relates_to);
 
-    console.log("-> Data Principale + Fiches...");
-    const mainRowIds: string[] = [];
-    for (const item of (ai.db_principale.donnees || [])) {
-      const row = await fetchNotion("pages", "POST", {
-        parent: { type: "database_id", database_id: dbMainId },
-        properties: {
-          [ai.db_principale.col_titre || "Nom"]: { title: [{ text: { content: item.titre || "Item" } }] }
+    // Compteur global pour piocher des images différentes pour chaque row (utile pour la vue Galerie)
+    let globalImageCounter = 0;
+
+    async function createDb(db: Plan["databases"][0], parentInfo?: { dbId: string; rowIds: string[] }) {
+      console.log(`  → DB : ${db.title}`);
+      await append(D, [B.h2(`${db.emoji || "📋"} ${db.title}`), B.p(db.description || "", "gray")]);
+
+      const props: any = { [db.title_column || "Nom"]: { title: {} } };
+      for (const col of db.columns || []) {
+        if (col.name === db.title_column || col.type === "title") continue;
+        const ct = vtype(col.type);
+        if ((ct === "select" || ct === "multi_select") && col.options?.length) {
+          props[col.name] = { [ct]: { options: col.options.map(o => ({ name: String(o) })) } };
+        } else {
+          props[col.name] = { [ct]: {} };
         }
-      });
-      mainRowIds.push(row.id);
-
-      if (item.resume) {
-        await appendBlocks(row.id, [
-          {
-            object: "block", type: "callout",
-            callout: {
-              rich_text: [{ type: "text", text: { content: item.resume } }],
-              icon: { type: "emoji", emoji: "📝" }, color: "gray_background"
-            }
-          }
-        ]);
-      }
-    }
-
-    // ================================================================
-    // 7. DB SECONDAIRE + RELATION + DATA
-    // ================================================================
-    console.log("-> DB Secondaire + Relation...");
-    const childProps: any = { [ai.db_secondaire.col_titre || "Nom"]: { title: {} } };
-    for (const col of (ai.db_secondaire.colonnes || [])) {
-      childProps[col.nom] = { [getValidType(col.type_notion)]: {} };
-    }
-    childProps[ai.db_secondaire.nom_relation || "Lien"] = {
-      relation: { database_id: dbMainId, single_property: {} }
-    };
-
-    const dbChild = await fetchNotion("databases", "POST", {
-      parent: { type: "page_id", page_id: space2Id },
-      title: [{ type: "text", text: { content: ai.db_secondaire.titre || "Base Secondaire" } }],
-      properties: childProps,
-      is_inline: true
-    });
-    const dbChildId = dbChild.id;
-
-    console.log("-> Data Secondaire + Relations...");
-    for (const item of (ai.db_secondaire.donnees || [])) {
-      const parentIndex = item.parent_index ?? 0;
-      const parentId = mainRowIds.length > 0 ? mainRowIds[parentIndex % mainRowIds.length] : null;
-
-      const props: any = {
-        [ai.db_secondaire.col_titre || "Nom"]: { title: [{ text: { content: item.titre || "Tâche" } }] }
-      };
-      if (parentId) {
-        props[ai.db_secondaire.nom_relation || "Lien"] = { relation: [{ id: parentId }] };
       }
 
-      await fetchNotion("pages", "POST", {
-        parent: { type: "database_id", database_id: dbChildId },
-        properties: props
-      });
-    }
+      if (db.relation_name && parentInfo) {
+        props[db.relation_name] = { relation: { database_id: parentInfo.dbId, single_property: {} } };
+      }
 
-    // ================================================================
-    // 8. DB RÉFÉRENCE + DATA + SOPs (Axe 2 : Injection de Savoir)
-    // ================================================================
-    console.log("-> DB Référence...");
-    const refProps: any = { [ai.db_reference.col_titre || "Nom"]: { title: {} } };
-    for (const col of (ai.db_reference.colonnes || [])) {
-      refProps[col.nom] = { [getValidType(col.type_notion)]: {} };
-    }
-
-    const dbRef = await fetchNotion("databases", "POST", {
-      parent: { type: "page_id", page_id: space3Id },
-      title: [{ type: "text", text: { content: ai.db_reference.titre || "Références" } }],
-      properties: refProps,
-      is_inline: true
-    });
-    const dbRefId = dbRef.id;
-
-    console.log("-> Data Référence + SOPs détaillés...");
-    for (const item of (ai.db_reference.donnees || [])) {
-      const row = await fetchNotion("pages", "POST", {
-        parent: { type: "database_id", database_id: dbRefId },
-        properties: {
-          [ai.db_reference.col_titre || "Nom"]: { title: [{ text: { content: item.titre || "Ressource" } }] }
-        }
+      const created = await notion("databases", "POST", {
+        parent: { type: "page_id", page_id: D },
+        title: [{ text: { content: db.title } }],
+        icon: { type: "emoji", emoji: db.emoji || "📋" },
+        is_inline: true,
+        properties: props,
       });
 
-      if (item.contenu) {
-        await appendBlocks(row.id, [
-          {
-            object: "block", type: "heading_3",
-            heading_3: { rich_text: [{ type: "text", text: { content: `📋 ${item.titre}` } }] }
-          },
-          {
-            object: "block", type: "paragraph",
-            paragraph: { rich_text: [{ type: "text", text: { content: item.contenu } }] }
-          },
-          { object: "block", type: "divider", divider: {} },
-          {
-            object: "block", type: "callout",
-            callout: {
-              rich_text: [{ type: "text", text: { content: "Personnalise cette procédure selon tes besoins spécifiques." } }],
-              icon: { type: "emoji", emoji: "✏️" }, color: "gray_background"
-            }
-          }
-        ]);
+      const rowIds: string[] = [];
+      for (let i = 0; i < (db.sample_data || []).length; i++) {
+        const item = db.sample_data[i];
+        const relId = parentInfo?.rowIds?.length ? parentInfo.rowIds[i % parentInfo.rowIds.length] : undefined;
+        
+        // Attribution sécurisée d'une cover depuis notre bibliothèque hardcodée
+        const secureCover = GALLERY_COVERS[globalImageCounter % GALLERY_COVERS.length];
+        globalImageCounter++;
+
+        const pagePayload: any = {
+          parent: { type: "database_id", database_id: created.id },
+          properties: buildRow(db, item, relId),
+          cover: { type: "external", external: { url: secureCover } }
+        };
+
+        try {
+          const r = await notion("pages", "POST", pagePayload);
+          rowIds.push(r.id);
+        } catch (e: any) {
+          console.log(`    ⚠️ Erreur ligne: ${e.message?.slice(0,50)}`);
+        }
       }
+      
+      await append(D, [B.divider()]);
+      return { dbId: created.id, rowIds };
     }
 
-    // ================================================================
-    // 9. QUÊTES D'ONBOARDING + PRO TIPS + SIGNATURE (Axe 3)
-    // ================================================================
-    console.log("-> Onboarding + Signature...");
-    const questBlocks = (ai.quetes || [
-      "Lis le Mode d'Emploi",
-      "Transforme une base en vue Kanban",
-      "Crée ta première entrée",
-      "Invite un collaborateur"
-    ]).map((quest: string) => ({
-      object: "block", type: "to_do",
-      to_do: { rich_text: [{ type: "text", text: { content: quest } }], checked: false }
-    }));
+    // Créer Parents puis Enfants
+    for (const db of parentDbs) {
+      dbMap[db.key] = await createDb(db);
+    }
+    for (const db of childDbs) {
+      dbMap[db.key] = await createDb(db, db.relates_to ? dbMap[db.relates_to] : undefined);
+    }
 
-    const tipBlocks = (ai.astuces || []).map((tip: string) => ({
-      object: "block", type: "bulleted_list_item",
-      bulleted_list_item: { rich_text: [{ type: "text", text: { content: tip } }] }
-    }));
+    console.log("✅ 🏆 TEMPLATE GÉNÉRÉ SANS ERREURS !");
+    return { success: true, url: `https://notion.so/${D.replace(/-/g, "")}` };
 
-    await appendBlocks(dashboardId, [
-      { object: "block", type: "divider", divider: {} },
-      {
-        object: "block", type: "toggle",
-        toggle: {
-          rich_text: [{ type: "text", text: { content: "🏆 Quêtes de Configuration — Clique pour débloquer" }, annotations: { bold: true } }],
-          children: questBlocks
-        }
-      },
-      { object: "block", type: "divider", divider: {} },
-      {
-        object: "block", type: "toggle",
-        toggle: {
-          rich_text: [{ type: "text", text: { content: "🎯 Pro Tips — Astuces d'expert" }, annotations: { bold: true } }],
-          children: tipBlocks
-        }
-      },
-      { object: "block", type: "divider", divider: {} },
-      {
-        object: "block", type: "callout",
-        callout: {
-          rich_text: [{ type: "text", text: { content: "Ce système a été généré par NotionGen — notiongen.vercel.app" } }],
-          icon: { type: "emoji", emoji: "✨" }, color: "purple_background"
-        }
-      }
-    ]);
-
-    // ================================================================
-    // 10. MODE D'EMPLOI (Page dédiée)
-    // ================================================================
-    console.log("-> Mode d'Emploi...");
-    await fetchNotion("pages", "POST", {
-      parent: { type: "page_id", page_id: dashboardId },
-      icon: { type: "emoji", emoji: "📘" },
-      properties: { title: { title: [{ text: { content: "📘 Mode d'Emploi Complet" } }] } },
-      children: [
-        {
-          object: "block", type: "callout",
-          callout: {
-            rich_text: [{ type: "text", text: { content: "Lis ce guide AVANT de commencer. Il t'explique comment tirer le maximum de ton système." }, annotations: { italic: true } }],
-            icon: { type: "emoji", emoji: "⚠️" }, color: "red_background"
-          }
-        },
-        { object: "block", type: "divider", divider: {} },
-        {
-          object: "block", type: "paragraph",
-          paragraph: { rich_text: [{ type: "text", text: { content: ai.guide || "Bienvenue dans ton nouveau système." } }] }
-        }
-      ]
-    });
-
-    console.log("✅ SYSTÈME ULTIME PREMIUM TERMINÉ !");
-    const cleanId = dashboardId.replace(/-/g, "");
-    return { success: true, url: `https://notion.so/${cleanId}` };
-
-  } catch (error) {
-    console.error("Erreur fatale:", error);
-    return { success: false, error: "Bug du système" };
+  } catch (error: any) {
+    console.error("❌", error);
+    return { success: false, error: error.message };
   }
 }

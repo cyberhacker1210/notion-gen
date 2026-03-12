@@ -3,94 +3,249 @@
 import { useState } from "react";
 import { generateNotionTemplate } from "./action";
 
+type StepStatus = { label: string; done: boolean };
+
 export default function GeneratePage() {
+  const [step, setStep] = useState<"input" | "generating" | "done">("input");
   const [prompt, setPrompt] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [buildSteps, setBuildSteps] = useState<StepStatus[]>([]);
   const [resultUrl, setResultUrl] = useState("");
+  const [error, setError] = useState("");
 
   const handleGenerate = async () => {
-    if (prompt.trim() === "") return;
-    
-    setIsLoading(true);
-    setIsSubmitted(true);
+    if (prompt.trim().length < 5) return;
+    setError("");
+    setStep("generating");
+
+    setBuildSteps([
+      { label: "L'IA analyse ton besoin et conçoit l'architecture...", done: false },
+      { label: "Création des bases de données relationnelles...", done: false },
+      { label: "Injection des données d'exemple...", done: false },
+      { label: "Construction des sous-pages & templates...", done: false },
+      { label: "Design du Dashboard avec layout 2 colonnes...", done: false },
+      { label: "Finitions, KPIs et polish final...", done: false },
+    ]);
+
+    const progressInterval = setInterval(() => {
+      setBuildSteps((prev) => {
+        const next = [...prev];
+        const first = next.findIndex((s) => !s.done);
+        if (first !== -1 && first < next.length - 1) next[first].done = true;
+        return next;
+      });
+    }, 7000);
 
     const response = await generateNotionTemplate(prompt);
-    
+    clearInterval(progressInterval);
+    setBuildSteps((prev) => prev.map((s) => ({ ...s, done: true })));
+
+    await new Promise((r) => setTimeout(r, 600));
+
     if (response.success && response.url) {
-      // ✅ ON STOCKE L'URL RÉELLE
-      setResultUrl(response.url); 
+      setResultUrl(response.url);
+      setStep("done");
     } else {
-      alert("Erreur lors de la génération. Réessaie.");
-      setIsSubmitted(false); // On annule l'écran de succès
+      setError(response.error || "Erreur lors de la génération. Réessaie !");
+      setStep("input");
     }
-    
-    setIsLoading(false);
   };
 
-  return (
-    <section className="min-h-screen flex flex-col items-center bg-slate-50 p-6">
-      
-      <div className="w-full pt-12 pb-8">
-        <h1 className="text-center font-extrabold text-3xl md:text-4xl text-slate-900 tracking-tight">
-          Générateur de <span className="text-blue-600">Template</span>
-        </h1>
-      </div>
+  const handleReset = () => {
+    setStep("input");
+    setPrompt("");
+    setBuildSteps([]);
+    setResultUrl("");
+    setError("");
+  };
 
-      <div className="my-auto w-full max-w-2xl flex flex-col gap-6">
-        
-        {isSubmitted ? (
-          <div className="flex flex-col items-center justify-center space-y-6 bg-white p-12 rounded-3xl border border-slate-200 shadow-xl">
-            {isLoading ? (
-              <>
-                <svg className="animate-spin h-12 w-12 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <h2 className="text-slate-800 font-bold text-2xl animate-pulse text-center">
-                  L'IA analyse ta demande et construit ton Notion...
-                </h2>
-              </>
-            ) : (
-              <>
-                <span className="text-6xl">🎉</span>
-                <h2 className="text-green-600 font-bold text-2xl text-center">
-                  C'est prêt !
-                </h2>
-                <a 
-                  href={resultUrl}
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="px-8 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-1"
-                  >
-                  Ouvrir dans Notion
-                </a>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-6 bg-white p-8 md:p-10 rounded-3xl border border-slate-200 shadow-xl">
-            <p className="text-slate-500 text-lg font-medium">
-              Décris ce que tu veux gérer (ex: tes cours, tes clients, ta salle de sport...). Sois le plus précis possible.
+  // ============================================
+  // DONE
+  // ============================================
+  if (step === "done") {
+    return (
+      <section className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
+        <div className="max-w-lg w-full">
+          <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl text-center">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
+              <span className="text-4xl">✅</span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white mb-2">
+              Ton système est prêt.
+            </h1>
+            <p className="text-neutral-500 text-sm mb-8">
+              Bases de données relationnelles · Dashboard premium · Données d'exemple · Templates
             </p>
-            
-            <textarea
-              className="w-full h-48 p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-lg focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition-all resize-none"
-              placeholder="Je suis un étudiant en école d'ingénieur. Je veux un dashboard pour tracker mes révisions, avec une base de données pour mes matières et une autre pour mes notes..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-            
-            <button
-              onClick={handleGenerate}
-              disabled={prompt.length < 10}
-              className="w-full bg-blue-600 text-white font-bold text-lg py-5 rounded-2xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-lg disabled:cursor-not-allowed"
+            <a
+              href={resultUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block w-full bg-white text-black font-bold text-lg py-4 rounded-2xl hover:bg-neutral-200 transition-all shadow-lg hover:-translate-y-0.5"
             >
-              Générer mon espace de travail
+              Ouvrir dans Notion →
+            </a>
+            <button
+              onClick={handleReset}
+              className="mt-4 w-full py-3 rounded-2xl border border-[#333] text-neutral-500 hover:text-white hover:border-[#555] transition-all text-sm"
+            >
+              Générer un autre template
             </button>
           </div>
-        )}
+        </div>
+      </section>
+    );
+  }
 
+  // ============================================
+  // GENERATING
+  // ============================================
+  if (step === "generating") {
+    return (
+      <section className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
+        <div className="max-w-lg w-full">
+          <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center animate-pulse">
+                <span className="text-3xl">⚡</span>
+              </div>
+              <h1 className="text-2xl font-extrabold text-white">
+                Construction en cours...
+              </h1>
+              <p className="text-neutral-500 text-sm mt-1">
+                L'IA conçoit ton système sur-mesure
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {buildSteps.map((s, i) => (
+                <div
+                  key={i}
+                  className={`flex items-center gap-4 transition-all duration-500 ${
+                    s.done ? "opacity-40" : "opacity-100"
+                  }`}
+                >
+                  {s.done ? (
+                    <span className="text-emerald-400 text-lg flex-shrink-0">✓</span>
+                  ) : (
+                    <svg
+                      className="animate-spin h-4 w-4 text-violet-400 flex-shrink-0"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  <span
+                    className={`text-sm ${
+                      s.done ? "text-neutral-600 line-through" : "text-neutral-300"
+                    }`}
+                  >
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 text-center">
+              <span className="text-xs text-neutral-600 bg-[#1a1a1a] px-4 py-2 rounded-full">
+                ~45 secondes · Ne ferme pas la page
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ============================================
+  // INPUT
+  // ============================================
+  return (
+    <section className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
+      <div className="max-w-2xl w-full">
+        <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+              <span className="text-3xl">⚡</span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+              Notion Template Generator
+            </h1>
+            <p className="text-neutral-500 mt-2">
+              Décris ton besoin. L'IA construit un système Notion complet et premium.
+            </p>
+          </div>
+
+          {/* What you get */}
+          <div className="grid grid-cols-3 gap-3 mb-8">
+            {[
+              { icon: "🗄️", label: "3-6 Bases relationnelles" },
+              { icon: "📊", label: "Dashboard avec KPIs" },
+              { icon: "📄", label: "Sous-pages & Templates" },
+            ].map((item, i) => (
+              <div
+                key={i}
+                className="p-3 rounded-xl bg-[#1a1a1a] border border-[#252525] text-center"
+              >
+                <span className="text-xl block">{item.icon}</span>
+                <p className="text-neutral-400 text-xs mt-1">{item.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Examples */}
+          <div className="mb-6">
+            <p className="text-neutral-600 text-xs mb-3 uppercase tracking-wider font-medium">
+              Exemples de prompts
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                "Gestion d'élevage de reptiles",
+                "Suivi de collection de vinyles",
+                "Studio de tatouage freelance",
+                "Entraînement marathon",
+                "Gestion d'une micro-brasserie",
+                "Suivi de lectures & book club",
+              ].map((example, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPrompt(example)}
+                  className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#252525] text-neutral-400 text-xs hover:border-violet-500/50 hover:text-violet-300 transition-all"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Textarea */}
+          <textarea
+            className="w-full h-32 p-5 rounded-2xl bg-[#0a0a0a] border border-[#252525] text-white text-base focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-none placeholder:text-neutral-600"
+            placeholder="Décris précisément ton besoin, ta niche, ce que tu veux organiser..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+
+          {error && (
+            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+              ❌ {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleGenerate}
+            disabled={prompt.trim().length < 5}
+            className="mt-6 w-full bg-white text-black font-bold text-lg py-4 rounded-2xl hover:bg-neutral-200 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-20 disabled:hover:translate-y-0 disabled:cursor-not-allowed active:translate-y-0"
+          >
+            Générer mon template →
+          </button>
+
+          <p className="mt-4 text-center text-xs text-neutral-600">
+            Databases relationnelles · Rollups · KPIs · Données d'exemple · Layout pro
+          </p>
+        </div>
       </div>
     </section>
   );
