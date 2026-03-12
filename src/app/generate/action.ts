@@ -33,7 +33,8 @@ async function notion(endpoint: string, method: string, body?: any) {
 }
 
 async function append(pageId: string, blocks: any[]) {
-  const safeBlocks = blocks.filter(b => b != null);
+  // Filtrer les null/undefined
+  const safeBlocks = blocks.filter((b) => b != null);
   for (let i = 0; i < safeBlocks.length; i += 100) {
     await notion(`blocks/${pageId}/children`, "PATCH", {
       children: safeBlocks.slice(i, i + 100),
@@ -42,7 +43,7 @@ async function append(pageId: string, blocks: any[]) {
 }
 
 // ================================================================
-// IMAGE LIBRARY (100% Vérifiées - Adieu les liens cassés)
+// IMAGE LIBRARY (Sécurisées)
 // ================================================================
 
 const MAIN_COVERS = [
@@ -52,10 +53,10 @@ const MAIN_COVERS = [
 ];
 
 const NAV_IMAGES = [
-  "https://images.unsplash.com/photo-1517842645767-c639042777db?q=80&w=800&auto=format&fit=crop", // iPad/Notes
-  "https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop", // Desk top view
-  "https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?q=80&w=800&auto=format&fit=crop", // Workspace aesthetic
-  "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?q=80&w=800&auto=format&fit=crop", // Minimalist desk
+  "https://images.unsplash.com/photo-1517842645767-c639042777db?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?q=80&w=800&auto=format&fit=crop",
 ];
 
 const GALLERY_COVERS = [
@@ -64,9 +65,6 @@ const GALLERY_COVERS = [
   "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=600&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=600&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1505664159854-2326115c8c2f?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1512314889357-e157c22f938d?q=80&w=600&auto=format&fit=crop",
 ];
 
 // ================================================================
@@ -95,7 +93,7 @@ const B = {
   divider: () => ({ object: "block", type: "divider", divider: {} }),
   space: () => ({ object: "block", type: "paragraph", paragraph: { rich_text: [] } }),
   cols: (columns: any[][]) => {
-    const safeCols = columns.map(col => col.length > 0 ? col : [B.p(" ")]);
+    const safeCols = columns.map(col => (col.length > 0 ? col : [B.p(" ")]));
     while (safeCols.length < 2) safeCols.push([B.p(" ")]);
     return {
       object: "block", type: "column_list",
@@ -109,25 +107,26 @@ const B = {
 // ================================================================
 
 interface Plan {
-  system_name: string;
-  system_emoji: string;
-  tagline: string;
-  quote: string;
-  widgets: {
-    kpis: Array<{ label: string; value: string }>;
-    actions: Array<{ label: string; emoji: string }>;
-    todos: string[];
-    reminders: string[];
+  system_name?: string;
+  system_emoji?: string;
+  cover_url?: string;
+  tagline?: string;
+  quote?: string;
+  widgets?: {
+    kpis?: Array<{ label: string; value: string }>;
+    actions?: Array<{ label: string; emoji: string }>;
+    todos?: string[];
+    reminders?: string[];
   };
-  visual_nav: Array<{ label: string; emoji: string }>; // Exactement 4 (sans image_url géré par IA)
-  databases: Array<{
+  visual_nav?: Array<{ label: string; emoji: string }>;
+  databases?: Array<{
     key: string;
     title: string;
     emoji: string;
     description: string;
     title_column: string;
     columns: Array<{ name: string; type: string; options?: string[] }>;
-    sample_data: Array<{ title: string; values: Record<string, any> }>; // Plus de cover_url par IA
+    sample_data: Array<{ title: string; values: Record<string, any> }>;
     relates_to?: string;
     relation_name?: string;
   }>;
@@ -140,8 +139,8 @@ async function architect(prompt: string): Promise<Plan> {
     messages: [
       {
         role: "system",
-        content: `Tu es un architecte Notion. L'utilisateur va te donner un sujet (ex: SaaS Manager, Étudiant, Fitness).
-Tu dois concevoir un système complet avec une structure JSON stricte.
+        content: `Tu es un architecte Notion. L'utilisateur te donne un sujet.
+Conçois un système complet avec une structure JSON stricte.
 
 RÈGLES IMPORTANTES :
 1. "visual_nav" doit contenir EXACTEMENT 4 items (juste label et emoji).
@@ -190,23 +189,25 @@ JSON STRICT :
 // BUILD ROW PROPERTIES
 // ================================================================
 
-function vtype(t: string) { return ["rich_text","number","select","multi_select","checkbox","date","url","email"].includes(t) ? t : "rich_text"; }
+function vtype(t: string) { 
+  return ["rich_text","number","select","multi_select","checkbox","date","url","email"].includes(t) ? t : "rich_text"; 
+}
 
-function buildRow(db: Plan["databases"][0], item: any, relId?: string): any {
+function buildRow(db: NonNullable<Plan["databases"]>[0], item: any, relId?: string): any {
   const tc = db.title_column || "Nom";
   const p: any = { [tc]: { title: [{ text: { content: String(item.title || "—") } }] } };
 
-  if (item.values) {
+  if (item.values && db.columns) {
     for (const [k, v] of Object.entries(item.values)) {
       if (k === tc || k === db.relation_name || v == null) continue;
-      const col = db.columns.find((c) => c.name === k);
+      const col = db.columns.find((c: any) => c.name === k);
       if (!col) continue;
       const t = vtype(col.type);
       try {
         if (t === "checkbox") p[k] = { checkbox: v === true || v === "true" };
         else if (t === "number") p[k] = { number: Number(v) || 0 };
         else if (t === "select") p[k] = { select: { name: String(v) } };
-        else if (t === "multi_select") p[k] = { multi_select: (Array.isArray(v)?v:[v]).map(x => ({ name: String(x) })) };
+        else if (t === "multi_select") p[k] = { multi_select: (Array.isArray(v) ? v : [v]).map(x => ({ name: String(x) })) };
         else if (t === "date") p[k] = { date: { start: String(v).slice(0, 10) } };
         else if (t === "url") { if (String(v).startsWith("http")) p[k] = { url: String(v) }; }
         else p[k] = { rich_text: [{ text: { content: String(v) } }] };
@@ -229,11 +230,14 @@ export async function generateNotionTemplate(prompt: string) {
     console.log("🧠 1. IA : Architecture du système...");
     const plan = await architect(prompt);
     
+    if (!plan.databases || plan.databases.length === 0) {
+      throw new Error("L'IA n'a pas généré de bases de données.");
+    }
+
     const rootId = process.env.NOTION_PARENT_PAGE_ID!;
 
     console.log("🏗️ 2. Création de la page principale...");
     
-    // Tirage aléatoire d'une cover principale validée
     const randomMainCover = MAIN_COVERS[Math.floor(Math.random() * MAIN_COVERS.length)];
 
     const dashboard = await notion("pages", "POST", {
@@ -248,22 +252,23 @@ export async function generateNotionTemplate(prompt: string) {
 
     console.log("🎨 3. Construction des Widgets (Top Row)...");
     
-    const kpiCol = [B.h3("📊 Metrics")];
+    // Ajout des types explicites ": any[]" ici pour corriger TypeScript
+    const kpiCol: any[] = [B.h3("📊 Metrics")];
     for (const kpi of (plan.widgets?.kpis || []).slice(0, 4)) {
       kpiCol.push(B.callout(`${kpi.label}\n${kpi.value}`, "📈", "gray_background"));
     }
     
-    const actionCol = [B.h3("⚡ Actions"), B.divider()];
+    const actionCol: any[] = [B.h3("⚡ Actions"), B.divider()];
     for (const action of (plan.widgets?.actions || []).slice(0, 4)) {
       actionCol.push(B.callout(action.label, action.emoji || "📌", "blue_background", true));
     }
 
-    const todoCol = [B.h3("☑️ Mini-To-Do")];
+    const todoCol: any[] = [B.h3("☑️ Mini-To-Do")];
     for (const td of (plan.widgets?.todos || []).slice(0, 5)) {
       todoCol.push(B.todo(td));
     }
 
-    const reminderCol = [B.h3("📌 Reminders")];
+    const reminderCol: any[] = [B.h3("📌 Reminders")];
     for (const rem of (plan.widgets?.reminders || []).slice(0, 5)) {
       reminderCol.push(B.bullet(rem));
     }
@@ -280,8 +285,7 @@ export async function generateNotionTemplate(prompt: string) {
     console.log("🖼️ 4. Construction de la Navigation Visuelle...");
     const navItems = (plan.visual_nav || []).slice(0, 4);
     if (navItems.length > 0) {
-      const navCols = navItems.map((nav, i) => [
-        // On pioche dans notre tableau d'images sécurisées au lieu de faire confiance à l'IA
+      const navCols: any[][] = navItems.map((nav, i) => [
         B.image(NAV_IMAGES[i % NAV_IMAGES.length]),
         B.callout(nav.label, nav.emoji || "📂", "gray_background", true)
       ]);
@@ -295,13 +299,12 @@ export async function generateNotionTemplate(prompt: string) {
     console.log("🗄️ 5. Création des Bases de Données...");
     
     const dbMap: Record<string, { dbId: string; rowIds: string[] }> = {};
-    const parentDbs = plan.databases.filter(d => !d.relates_to);
-    const childDbs = plan.databases.filter(d => d.relates_to);
+    const parentDbs = plan.databases.filter((d) => !d.relates_to);
+    const childDbs = plan.databases.filter((d) => d.relates_to);
 
-    // Compteur global pour piocher des images différentes pour chaque row (utile pour la vue Galerie)
     let globalImageCounter = 0;
 
-    async function createDb(db: Plan["databases"][0], parentInfo?: { dbId: string; rowIds: string[] }) {
+    async function createDb(db: NonNullable<Plan["databases"]>[0], parentInfo?: { dbId: string; rowIds: string[] }) {
       console.log(`  → DB : ${db.title}`);
       await append(D, [B.h2(`${db.emoji || "📋"} ${db.title}`), B.p(db.description || "", "gray")]);
 
@@ -310,7 +313,7 @@ export async function generateNotionTemplate(prompt: string) {
         if (col.name === db.title_column || col.type === "title") continue;
         const ct = vtype(col.type);
         if ((ct === "select" || ct === "multi_select") && col.options?.length) {
-          props[col.name] = { [ct]: { options: col.options.map(o => ({ name: String(o) })) } };
+          props[col.name] = { [ct]: { options: col.options.map((o: string) => ({ name: String(o) })) } };
         } else {
           props[col.name] = { [ct]: {} };
         }
@@ -333,18 +336,15 @@ export async function generateNotionTemplate(prompt: string) {
         const item = db.sample_data[i];
         const relId = parentInfo?.rowIds?.length ? parentInfo.rowIds[i % parentInfo.rowIds.length] : undefined;
         
-        // Attribution sécurisée d'une cover depuis notre bibliothèque hardcodée
         const secureCover = GALLERY_COVERS[globalImageCounter % GALLERY_COVERS.length];
         globalImageCounter++;
 
-        const pagePayload: any = {
-          parent: { type: "database_id", database_id: created.id },
-          properties: buildRow(db, item, relId),
-          cover: { type: "external", external: { url: secureCover } }
-        };
-
         try {
-          const r = await notion("pages", "POST", pagePayload);
+          const r = await notion("pages", "POST", {
+            parent: { type: "database_id", database_id: created.id },
+            properties: buildRow(db, item, relId),
+            cover: { type: "external", external: { url: secureCover } }
+          });
           rowIds.push(r.id);
         } catch (e: any) {
           console.log(`    ⚠️ Erreur ligne: ${e.message?.slice(0,50)}`);
@@ -355,7 +355,6 @@ export async function generateNotionTemplate(prompt: string) {
       return { dbId: created.id, rowIds };
     }
 
-    // Créer Parents puis Enfants
     for (const db of parentDbs) {
       dbMap[db.key] = await createDb(db);
     }
@@ -368,6 +367,6 @@ export async function generateNotionTemplate(prompt: string) {
 
   } catch (error: any) {
     console.error("❌", error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message || String(error) };
   }
 }
