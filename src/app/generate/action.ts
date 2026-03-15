@@ -79,6 +79,7 @@ export async function generateNotionTemplate(prompt: string) {
     const dbMap: Record<string, { dbId: string; rowIds: string[] }> = {};
     let coreDbTitle = schema[0]?.title || "Hub";
 
+    // Construction des bases de données
     for (const db of schema) {
       if (db.is_core_hub) coreDbTitle = db.title;
       const props: any = { [db.title_column || "Name"]: { title: {} } };
@@ -99,12 +100,11 @@ export async function generateNotionTemplate(prompt: string) {
       }
       props["Archived"] = { checkbox: {} };
 
-      // FIX CRITIQUE : is_inline supprimé ! La base devient une Full-Page Database.
       const createdDb = await notionApi("databases", "POST", {
         parent: { type: "page_id", page_id: backendPage.id },
         title: [{ text: { content: db.title || "Database" } }],
         icon: { type: "emoji", emoji: safeEmoji(db.emoji, "❖") },
-        properties: props,
+        properties: props, // is_inline retiré pour autoriser les liens dynamiques sur l'accueil
       });
 
       const rowIds: string[] = [];
@@ -129,7 +129,7 @@ export async function generateNotionTemplate(prompt: string) {
     
     const dbLinksCol: any[] = [B.h3("🗄️ Databases")];
     for (const db of schema) {
-      if (dbMap[db.key]) { // Sécurité supplémentaire
+      if (dbMap[db.key]) { 
         dbLinksCol.push(B.linkDb(dbMap[db.key].dbId));
       }
     }

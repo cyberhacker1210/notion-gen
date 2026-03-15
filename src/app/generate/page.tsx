@@ -1,252 +1,218 @@
 "use client";
 
-import { useState } from "react";
-import { generateNotionTemplate } from "./action";
+import { useState, useRef, useEffect } from "react";
+import { chatWithArchitect, ChatMessage } from "./chat";
+import { generateNotionTemplate } from "./action"; // Le Chef d'Orchestre qu'on a codé précédemment
 
-type StepStatus = { label: string; done: boolean };
+export default function ArchitectChatPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  
+  // Nouveaux états pour la phase de construction Notion
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [notionUrl, setNotionUrl] = useState<string | null>(null);
+  const [buildError, setBuildError] = useState<string | null>(null);
 
-export default function GeneratePage() {
-  const [step, setStep] = useState<"input" | "generating" | "done">("input");
-  const [prompt, setPrompt] = useState("");
-  const [buildSteps, setBuildSteps] = useState<StepStatus[]>([]);
-  const [resultUrl, setResultUrl] = useState("");
-  const [error, setError] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleGenerate = async () => {
-    if (prompt.trim().length < 5) return;
-    setError("");
-    setStep("generating");
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping, isBuilding, notionUrl]);
 
-    setBuildSteps([
-      { label: "L'IA analyse ton besoin et conçoit l'architecture...", done: false },
-      { label: "Création des bases de données relationnelles...", done: false },
-      { label: "Injection des données d'exemple...", done: false },
-      { label: "Construction des sous-pages & templates...", done: false },
-      { label: "Design du Dashboard avec layout 2 colonnes...", done: false },
-      { label: "Finitions, KPIs et polish final...", done: false },
-    ]);
+  const handleSend = async (textToSend: string) => {
+    if (!textToSend.trim() || isTyping) return;
 
-    const progressInterval = setInterval(() => {
-      setBuildSteps((prev) => {
-        const next = [...prev];
-        const first = next.findIndex((s) => !s.done);
-        if (first !== -1 && first < next.length - 1) next[first].done = true;
-        return next;
-      });
-    }, 7000);
+    const userMessage: ChatMessage = { role: "user", content: textToSend };
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsTyping(true);
 
-    const response = await generateNotionTemplate(prompt);
-    clearInterval(progressInterval);
-    setBuildSteps((prev) => prev.map((s) => ({ ...s, done: true })));
+    const res = await chatWithArchitect(messages, textToSend);
 
-    await new Promise((r) => setTimeout(r, 600));
-
-    if (response.success && response.url) {
-      setResultUrl(response.url);
-      setStep("done");
+    if (res.success && res.message) {
+      setMessages((prev) => [...prev, { role: "assistant", content: res.message! }]);
+      if (res.isReadyToBuild) {
+        setIsReady(true);
+      }
     } else {
-      setError(response.error || "Erreur lors de la génération. Réessaie !");
-      setStep("input");
+      setMessages((prev) => [...prev, { role: "assistant", content: "Oops... " + res.error }]);
+    }
+    
+    setIsTyping(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(input);
     }
   };
 
-  const handleReset = () => {
-    setStep("input");
-    setPrompt("");
-    setBuildSteps([]);
-    setResultUrl("");
-    setError("");
+  // ==========================================================================
+  // LA MAGIE OPÈRE ICI : Connexion entre le Chat et le Constructeur Notion
+  // ==========================================================================
+  const handleBuild = async () => {
+    setIsBuilding(true);
+    setBuildError(null);
+
+    // 1. On sérialise la conversation en un script lisible par l'IA Architecte
+    const conversationScript = messages
+      .map((m) => `${m.role === "user" ? "Client" : "Expert IA"} : ${m.content}`)
+      .join("\n\n");
+
+    // 2. On prépare le prompt ultime
+    const finalPrompt = `Voici la retranscription exacte de la discussion avec le client. 
+    Construis l'architecture de la base de données et le dashboard en respectant STRICTEMENT ce qui a été convenu ici :
+    
+    ${conversationScript}`;
+
+    // 3. On lance les Agents (ça prend environ 10-20 secondes)
+    const result = await generateNotionTemplate(finalPrompt);
+
+    if (result.success && result.url) {
+      setNotionUrl(result.url);
+    } else {
+      setBuildError(result.error || "Une erreur est survenue lors de la construction.");
+    }
+
+    setIsBuilding(false);
   };
 
-  // ============================================
-  // DONE
-  // ============================================
-  if (step === "done") {
-    return (
-      <section className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6">
-        <div className="max-w-lg w-full">
-          <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
-              <span className="text-4xl">✅</span>
-            </div>
-            <h1 className="text-3xl font-extrabold text-white mb-2">
-              Ton système est prêt.
-            </h1>
-            <p className="text-neutral-500 text-sm mb-8">
-              Bases de données relationnelles · Dashboard premium · Données d'exemple · Templates
-            </p>
-            <a
-              href={resultUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block w-full bg-white text-black font-bold text-lg py-4 rounded-2xl hover:bg-neutral-200 transition-all shadow-lg hover:-translate-y-0.5"
-            >
-              Ouvrir dans Notion →
-            </a>
-            <button
-              onClick={handleReset}
-              className="mt-4 w-full py-3 rounded-2xl border border-[#333] text-neutral-500 hover:text-white hover:border-[#555] transition-all text-sm"
-            >
-              Générer un autre template
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  // ============================================
-  // GENERATING
-  // ============================================
-  if (step === "generating") {
-    return (
-      <section className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
-        <div className="max-w-lg w-full">
-          <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center animate-pulse">
-                <span className="text-3xl">⚡</span>
-              </div>
-              <h1 className="text-2xl font-extrabold text-white">
-                Construction en cours...
-              </h1>
-              <p className="text-neutral-500 text-sm mt-1">
-                L'IA conçoit ton système sur-mesure
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {buildSteps.map((s, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center gap-4 transition-all duration-500 ${
-                    s.done ? "opacity-40" : "opacity-100"
-                  }`}
-                >
-                  {s.done ? (
-                    <span className="text-emerald-400 text-lg flex-shrink-0">✓</span>
-                  ) : (
-                    <svg
-                      className="animate-spin h-4 w-4 text-violet-400 flex-shrink-0"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  )}
-                  <span
-                    className={`text-sm ${
-                      s.done ? "text-neutral-600 line-through" : "text-neutral-300"
-                    }`}
-                  >
-                    {s.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 text-center">
-              <span className="text-xs text-neutral-600 bg-[#1a1a1a] px-4 py-2 rounded-full">
-                ~45 secondes · Ne ferme pas la page
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  // ============================================
-  // INPUT
-  // ============================================
   return (
-    <section className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
-      <div className="max-w-2xl w-full">
-        <div className="bg-[#111] p-10 rounded-3xl border border-[#222] shadow-2xl">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
-              <span className="text-3xl">⚡</span>
-            </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
-              Notion Template Generator
-            </h1>
-            <p className="text-neutral-500 mt-2">
-              Décris ton besoin. L'IA construit un système Notion complet et premium.
-            </p>
-          </div>
+    <div className="min-h-screen bg-[#F9FAFB] flex flex-col items-center justify-center p-4 font-sans text-slate-800">
+      
+      <div className="text-center mb-8">
+        <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-blue-600/30">
+          <span className="text-3xl">📐</span>
+        </div>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Notion Architect</h1>
+        <p className="text-slate-500 mt-2">Discute avec l'IA. Elle construit ton système.</p>
+      </div>
 
-          {/* What you get */}
-          <div className="grid grid-cols-3 gap-3 mb-8">
-            {[
-              { icon: "🗄️", label: "3-6 Bases relationnelles" },
-              { icon: "📊", label: "Dashboard avec KPIs" },
-              { icon: "📄", label: "Sous-pages & Templates" },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-xl bg-[#1a1a1a] border border-[#252525] text-center"
-              >
-                <span className="text-xl block">{item.icon}</span>
-                <p className="text-neutral-400 text-xs mt-1">{item.label}</p>
+      <div className="w-full max-w-3xl bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col h-[650px]">
+        
+        {/* ZONE DES MESSAGES */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+          
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-6 animate-in fade-in zoom-in duration-500">
+              <span className="text-5xl">👋</span>
+              <p className="text-lg font-medium text-slate-700 max-w-md">
+                Salut ! Je suis ton Architecte Notion. Pour quel type de projet as-tu besoin d'aide aujourd'hui ?
+              </p>
+              <div className="flex flex-wrap justify-center gap-3">
+                {["💼 CRM Freelance", "💰 Suivi de budget perso", "📚 Organisation Étudiante"].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => handleSend(suggestion)}
+                    className="px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium hover:border-blue-500 hover:text-blue-600 transition-colors shadow-sm"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* Examples */}
-          <div className="mb-6">
-            <p className="text-neutral-600 text-xs mb-3 uppercase tracking-wider font-medium">
-              Exemples de prompts
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Gestion d'élevage de reptiles",
-                "Suivi de collection de vinyles",
-                "Studio de tatouage freelance",
-                "Entraînement marathon",
-                "Gestion d'une micro-brasserie",
-                "Suivi de lectures & book club",
-              ].map((example, i) => (
-                <button
-                  key={i}
-                  onClick={() => setPrompt(example)}
-                  className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#252525] text-neutral-400 text-xs hover:border-violet-500/50 hover:text-violet-300 transition-all"
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Textarea */}
-          <textarea
-            className="w-full h-32 p-5 rounded-2xl bg-[#0a0a0a] border border-[#252525] text-white text-base focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-none placeholder:text-neutral-600"
-            placeholder="Décris précisément ton besoin, ta niche, ce que tu veux organiser..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-
-          {error && (
-            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-              ❌ {error}
             </div>
           )}
 
-          <button
-            onClick={handleGenerate}
-            disabled={prompt.trim().length < 5}
-            className="mt-6 w-full bg-white text-black font-bold text-lg py-4 rounded-2xl hover:bg-neutral-200 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-20 disabled:hover:translate-y-0 disabled:cursor-not-allowed active:translate-y-0"
-          >
-            Générer mon template →
-          </button>
+          {messages.map((msg, idx) => (
+            <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[80%] rounded-2xl p-4 text-[15px] leading-relaxed ${
+                msg.role === "user" 
+                  ? "bg-blue-600 text-white rounded-br-none shadow-md" 
+                  : "bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm"
+              }`}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
 
-          <p className="mt-4 text-center text-xs text-neutral-600">
-            Databases relationnelles · Rollups · KPIs · Données d'exemple · Layout pro
-          </p>
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-none p-4 shadow-sm flex gap-1">
+                <span className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></span>
+                <span className="w-2 h-2 bg-slate-300 rounded-full animate-bounce delay-75"></span>
+                <span className="w-2 h-2 bg-slate-300 rounded-full animate-bounce delay-150"></span>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
+
+        {/* ZONE D'INPUT & ACTIONS */}
+        <div className="p-4 bg-white border-t border-slate-200">
+          
+          {/* ÉTAT 3 : Template généré ! */}
+          {notionUrl ? (
+            <div className="animate-in slide-in-from-bottom-4 text-center p-4 bg-green-50 border border-green-200 rounded-2xl">
+              <span className="text-3xl block mb-2">🎉</span>
+              <h3 className="font-bold text-green-800 text-lg mb-4">Ton système est prêt !</h3>
+              <a 
+                href={notionUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-block w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition-all"
+              >
+                Ouvrir dans Notion →
+              </a>
+            </div>
+          ) : 
+          
+          /* ÉTAT 2 : En cours de construction */
+          isBuilding ? (
+            <div className="animate-in slide-in-from-bottom-4 text-center p-6 bg-slate-50 border border-slate-200 rounded-2xl">
+               <svg className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+               <h3 className="font-bold text-slate-800">Les Agents IA travaillent...</h3>
+               <p className="text-sm text-slate-500 mt-1">Création des bases, injection des données, design du dashboard (~15s)</p>
+            </div>
+          ) : 
+          
+          /* ÉTAT 1 : Prêt à construire */
+          isReady ? (
+             <div className="animate-in slide-in-from-bottom-4">
+               {buildError && (
+                 <div className="mb-3 p-3 bg-red-50 text-red-600 text-sm font-medium rounded-xl border border-red-100">
+                   {buildError}
+                 </div>
+               )}
+               <button 
+                  onClick={handleBuild}
+                  className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                >
+                 ✨ CRÉER CE SYSTÈME DANS MON NOTION
+               </button>
+               <p className="text-xs text-center text-slate-400 mt-3">L'IA a toutes les informations nécessaires.</p>
+             </div>
+          ) : 
+          
+          /* ÉTAT 0 : Chat en cours */
+          (
+            <div className="relative">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Tape ta réponse ici..."
+                disabled={isTyping}
+                className="w-full bg-slate-100 border-none rounded-2xl pl-4 pr-14 py-4 text-[15px] focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none h-14 overflow-hidden disabled:opacity-50"
+              />
+              <button
+                onClick={() => handleSend(input)}
+                disabled={!input.trim() || isTyping}
+                className="absolute right-2 top-2 bottom-2 w-10 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                ↑
+              </button>
+            </div>
+          )}
+        </div>
+
       </div>
-    </section>
+    </div>
   );
 }

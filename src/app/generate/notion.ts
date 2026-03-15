@@ -1,3 +1,7 @@
+// Pourquoi pas de "use server" ici ?
+// Parce que ce fichier ne contient que des fonctions utilitaires, pas de Server Actions appelées depuis le Frontend.
+// C'est action.ts qui fera le pont.
+
 export async function notionApi(endpoint: string, method: string, body?: any) {
   const res = await fetch(`https://api.notion.com/v1/${endpoint}`, {
     method,
@@ -16,12 +20,12 @@ export async function notionApi(endpoint: string, method: string, body?: any) {
 // 🛡️ ANTI-CRASH EMOJI
 export function safeEmoji(e: string | undefined, fallback: string): string {
   if (!e) return fallback;
-  // Si l'IA essaie de passer un symbole texte invalide, on force le fallback
+  // Notion plante si on lui envoie un symbole texte (dingbat) comme emoji officiel.
   if (["✦", "✧", "❖", "▫️", "▪️", "·"].includes(e.trim())) return fallback;
   return e.trim();
 }
 
-// 🛡️ ANTI-CRASH BLOCKS
+// 🛡️ ANTI-CRASH BLOCKS (Le nettoyeur récursif)
 function isValid(block: any) {
   return block && typeof block === "object" && block.type && block[block.type] !== undefined;
 }
@@ -44,6 +48,7 @@ export function deepClean(blocks: any[]): any[] {
   }).filter(isValid);
 }
 
+// Fonction d'ajout par lots de 100 blocs max (Limite de l'API Notion)
 export async function appendBlocks(pageId: string, blocks: any[]) {
   const safe = deepClean(blocks);
   for (let i = 0; i < safe.length; i += 100) {
@@ -51,7 +56,7 @@ export async function appendBlocks(pageId: string, blocks: any[]) {
   }
 }
 
-// 🎨 DESIGN SYSTEM
+// 🎨 DESIGN SYSTEM (Nos constructeurs de blocs sécurisés)
 const makeText = (t: string, c = "default", b = false) => [{ type: "text", text: { content: t || " " }, annotations: { color: c, bold: b } }];
 
 export const B = {
@@ -74,6 +79,7 @@ export const B = {
   },
 };
 
+// 🖼️ BANNIÈRES PREMIUM HARDCODÉES
 export const PREMIUM_COVERS = [
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2560&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1557682250-33bd709cbe85?q=80&w=2560&auto=format&fit=crop",
