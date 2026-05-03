@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# notion-gen — Notion Page Generator
+
+An automation tool that connects to the Notion API to generate structured pages and content programmatically from templates or user input.
+
+## Tech Stack
+
+| Technology | Usage |
+|---|---|
+| TypeScript | Main language |
+| Notion API | Page creation & management |
+| Node.js | Runtime environment |
+| OpenAI API | AI content generation (optional) |
+| dotenv | Environment variable management |
+
+## How it works
+
+```
+User Input / Template
+        ↓
+notion-gen processes the request
+        ↓
+Calls Notion API with structured data
+        ↓
+New page created inside your Notion workspace
+```
+
+## Features
+
+- Auto-generate Notion pages from templates
+- Populate databases with structured content
+- Supports rich text, headers, lists, and blocks
+- Configurable via environment variables
+
+## Project Structure
+
+```
+notion-gen/
+├── src/
+│   ├── index.ts          # Entry point
+│   ├── notionClient.ts   # Notion API connection
+│   ├── generator.ts      # Page generation logic
+│   └── templates/        # Page templates
+├── .env.example
+├── package.json
+└── tsconfig.json
+```
 
 ## Getting Started
 
-First, run the development server:
+**Prerequisites:** Node.js 18+, a Notion account with API access
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/cyberhacker1210/notion-gen
+cd notion-gen
+npm install
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+NOTION_API_KEY=your_notion_integration_token
+NOTION_PAGE_ID=your_target_page_id
+OPENAI_API_KEY=your_openai_key  # optional
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run start
+```
 
-## Learn More
+### Getting your Notion API Key
 
-To learn more about Next.js, take a look at the following resources:
+1. Go to [https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Create a new integration and copy the token into your `.env`
+3. Share your Notion page with the integration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Author
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**cyberhacker1210** — [GitHub](https://github.com/cyberhacker1210)
